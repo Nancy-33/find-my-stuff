@@ -45,7 +45,9 @@
       "Bash(./gradlew assembleDebug --no-daemon --no-build-cache -Dorg.gradle.unsafe.watch-fs=false)",
       "WebFetch(domain:expo.dev)",
       "Bash(curl -s \"https://expo.dev/api/v2/projects/9dd270a2-938d-4c2b-9fbc-fcee1071624e/builds/04014e13-9cad-4059-bf38-beb48f840492\")",
-      "Bash(curl -s \"https://expo.dev/accounts/18380875570/projects/find-my-stuff/builds/080f885c-d715-46ac-ac43-d6d4e34fbd6f\")"
+      "Bash(curl -s \"https://expo.dev/accounts/18380875570/projects/find-my-stuff/builds/080f885c-d715-46ac-ac43-d6d4e34fbd6f\")",
+      "Bash(curl -s -H \"Accept: application/json\" \"https://expo.dev/api/v2/projects/9dd270a2-938d-4c2b-9fbc-fcee1071624e/builds\")",
+      "Bash(curl -sL \"https://storage.googleapis.com/eas-workflows-production/logs/9dd270a2-938d-4c2b-9fbc-fcee1071624e/92f97380-a2ac-4938-9f0c-d6d1573ae1ec/2026-07-02T08%3A36%3A40Z-5d8c8dc0-93d6-4068-9d94-c9c2a2c8f3b3.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260702%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260702T084125Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=3a022b2a07874b55dfbc0aac7dc9d65324e827fbfe937a777818d65ed2019bf2670d1a3a4e852d9cf2349b9817d59f96f14ee3f085871b116c032f8ab77f9201534b1a89e281eff39d9d3f884e7d9032d47c289dec45f9ef5a978b42bf80f597ca09aa869dc942c59c8115c6c5c2485594efd7561251f44074efe45190498edf75705c8b16c2a8e52bcb54f453db8959932edeb025855fa179020600c6180bf1a2f59a3f99f46f454f71c1f03e8a9826e812bd9ad85031e8f616ffd8f23563d6c05684a7bb8e848278d9b1b95b8a89872f253663387ff1190d633b054932bcdde3cfe5a4702c3b31b9d725257c5333d8ec05df310b695f9993dbf053856064b8\")"
     ]
   }
 }
