@@ -22,7 +22,13 @@
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"]
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       [
@@ -31,6 +37,12 @@
           "cameraPermission": "需要使用相机来拍摄物品照片。"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9dd270a2-938d-4c2b-9fbc-fcee1071624e"
+      }
+    },
+    "owner": "18380875570"
   }
 }
