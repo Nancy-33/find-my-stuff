@@ -42,7 +42,9 @@
       "Bash(./gradlew assembleDebug --no-daemon)",
       "Bash(mkdir -p \"/c/Users/17248/gradle-cache\")",
       "Bash(export GRADLE_USER_HOME=\"/c/Users/17248/gradle-cache\")",
-      "Bash(./gradlew assembleDebug --no-daemon --no-build-cache -Dorg.gradle.unsafe.watch-fs=false)"
+      "Bash(./gradlew assembleDebug --no-daemon --no-build-cache -Dorg.gradle.unsafe.watch-fs=false)",
+      "WebFetch(domain:expo.dev)",
+      "Bash(curl -s \"https://expo.dev/api/v2/projects/9dd270a2-938d-4c2b-9fbc-fcee1071624e/builds/04014e13-9cad-4059-bf38-beb48f840492\")"
     ]
   }
 }
