@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "找东西",
+    "slug": "find-my-stuff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "需要使用相机来拍摄物品照片，以便您日后查找物品位置。",
+        "NSPhotoLibraryUsageDescription": "需要访问相册来保存物品照片。"
+      }
+    },
+    "android": {
+      "package": "com.findmystuff.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "需要使用相机来拍摄物品照片。"
+        }
+      ]
+    ]
+  }
+}
