@@ -13,6 +13,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { v4 as uuidv4 } from 'uuid';
+import { useAuth } from '../auth/AuthContext';
 import { RootStackParamList, Annotation } from '../types';
 import { saveItem } from '../storage/db';
 import AnnotationCanvas from '../components/AnnotationCanvas';
@@ -24,6 +25,8 @@ export default function AnnotationScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const { photoUri } = route.params;
+  const { user } = useAuth();
+  const userId = user!.id;
 
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [note, setNote] = useState('');
@@ -72,7 +75,7 @@ export default function AnnotationScreen() {
     }
     setSaving(true);
     try {
-      await saveItem({
+      await saveItem(userId, {
         id: uuidv4(),
         photoUri,
         annotations,
@@ -81,8 +84,9 @@ export default function AnnotationScreen() {
         createdAt: Date.now(),
       });
       navigation.popToTop();
-    } catch {
-      Alert.alert('保存失败', '请重试');
+    } catch (e) {
+      console.error('Save failed:', e);
+      Alert.alert('保存失败', String(e));
     } finally {
       setSaving(false);
     }

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useAuth } from '../auth/AuthContext';
 import { RootStackParamList, Item } from '../types';
 import { getItemById, deleteItem, deletePhotoFile } from '../storage/db';
 import AnnotationCanvas from '../components/AnnotationCanvas';
@@ -21,6 +22,8 @@ export default function DetailScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const { itemId } = route.params;
+  const { user } = useAuth();
+  const userId = user!.id;
 
   const [item, setItem] = useState<Item | null>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
@@ -28,7 +31,7 @@ export default function DetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      getItemById(itemId).then(item => setItem(item ?? null));
+      getItemById(userId, itemId).then(item => setItem(item ?? null));
     }, [itemId])
   );
 
@@ -42,7 +45,7 @@ export default function DetailScreen() {
           if (item) {
             await deletePhotoFile(item.photoUri);
           }
-          await deleteItem(itemId);
+          await deleteItem(userId, itemId);
           navigation.goBack();
         },
       },

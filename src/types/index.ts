@@ -10,8 +10,23 @@ export interface Annotation {
   label: string;
 }
 
+export interface User {
+  id: string;        // uuid
+  username: string;
+  createdAt: number; // timestamp
+}
+
+export type ResetResult =
+  | { success: true }
+  | { success: false; error: string };
+
+export type SecurityQuestionResult =
+  | { success: true; question: string }
+  | { success: false; error: string };
+
 export interface Item {
   id: string;
+  userId?: string;
   /** Local file URI of the photo */
   photoUri: string;
   /** All annotations (circles + labels) on this photo */
@@ -24,6 +39,7 @@ export interface Item {
 }
 
 export type RootStackParamList = {
+  Login: undefined;
   Home: undefined;
   Camera: undefined;
   Annotation: { photoUri: string };

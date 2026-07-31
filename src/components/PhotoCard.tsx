@@ -16,9 +16,10 @@ interface Props {
   item: Item;
   onPress: () => void;
   onLongPress?: () => void;
+  onDelete?: () => void;
 }
 
-export default function PhotoCard({ item, onPress, onLongPress }: Props) {
+export default function PhotoCard({ item, onPress, onLongPress, onDelete }: Props) {
   const [imgError, setImgError] = useState(false);
   const label = item.note || item.annotations[0]?.label || '未备注';
   const date = new Date(item.createdAt).toLocaleDateString('zh-CN');
@@ -50,6 +51,15 @@ export default function PhotoCard({ item, onPress, onLongPress }: Props) {
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{item.annotations.length}</Text>
         </View>
+      )}
+      {onDelete && (
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={onDelete}
+          hitSlop={{ top: 4, right: 4, bottom: 4, left: 4 }}
+        >
+          <Text style={styles.deleteBtnText}>✕</Text>
+        </TouchableOpacity>
       )}
     </TouchableOpacity>
   );
@@ -101,7 +111,7 @@ const styles = StyleSheet.create({
   badge: {
     position: 'absolute',
     top: 6,
-    right: 6,
+    left: 6,
     backgroundColor: '#FF3B30',
     width: 22,
     height: 22,
@@ -113,5 +123,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  deleteBtn: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  deleteBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 16,
   },
 });

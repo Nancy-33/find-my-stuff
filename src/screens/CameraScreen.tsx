@@ -1,11 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
   TouchableOpacity,
   Text,
   Alert,
+  Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,24 +23,58 @@ export default function CameraScreen() {
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
+  const [webCamFailed, setWebCamFailed] = useState(false);
+  const [permTimedOut, setPermTimedOut] = useState(false);
 
-  if (!permission) {
-    return <View style={styles.container} />;
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!permission) {
+        setPermTimedOut(true);
+      }
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [permission]);
 
-  if (!permission.granted) {
-    return (
-      <View style={styles.permContainer}>
-        <Text style={styles.permTitle}>需要相机权限</Text>
-        <Text style={styles.permDesc}>为了拍摄物品照片，需要访问您的相机</Text>
-        <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
-          <Text style={styles.permBtnText}>授予权限</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const tryWebCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach((t) => t.stop());
+      setWebCamFailed(false);
+      await requestPermission();
+    } catch (e) {
+      setWebCamFailed(true);
+    }
+  };
+
+  const resizeImageForWeb = (dataUri: string, maxDim = 1024): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width <= maxDim && height <= maxDim) {
+          resolve(dataUri); // Already small enough
+          return;
+        }
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => reject(new Error('Failed to load image for resize'));
+      img.src = dataUri;
+    });
+  };
 
   const copyToAppDir = async (uri: string) => {
+    if (Platform.OS === 'web') {
+      // Resize on web to keep base64 URIs small enough for localStorage
+      return await resizeImageForWeb(uri);
+    }
     const fileName = `photo_${Date.now()}.jpg`;
     const dest = FileSystem.documentDirectory + fileName;
     await FileSystem.copyAsync({ from: uri, to: dest });
@@ -71,7 +107,10 @@ export default function CameraScreen() {
     if (!perm.granted) {
       const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!req.granted) {
-        Alert.alert('需要相册权限', '请在设置中允许访问相册');
+        Alert.alert('需要相册权限', '需要相册权限，请在系统设置中开启', [
+          { text: '取消', style: 'cancel' },
+          { text: '前往设置', onPress: () => Linking.openSettings() },
+        ]);
         return;
       }
     }
@@ -82,21 +121,121 @@ export default function CameraScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      const dest = await copyToAppDir(result.assets[0].uri);
-      navigation.replace('Annotation', { photoUri: dest });
+      try {
+        const dest = await copyToAppDir(result.assets[0].uri);
+        navigation.replace('Annotation', { photoUri: dest });
+      } catch {
+        Alert.alert('加载失败', '图片加载失败，请重试');
+      }
     }
   };
+
+  if (!permission) {
+    // On web, if permissions API times out (e.g. HarmonyOS), fall through
+    if (Platform.OS === 'web' && permTimedOut) {
+      // Fall through to the permission-denied UI below
+    } else {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>正在检查相机权限...</Text>
+        </View>
+      );
+    }
+  }
+
+  if (!permission || !permission.granted) {
+    if (Platform.OS === 'web') {
+      if (!permission || webCamFailed) {
+        return (
+          <View style={styles.permContainer}>
+            <Text style={styles.permTitle}>相机不可用</Text>
+            <Text style={styles.permDesc}>
+              您的浏览器不支持相机，或已拒绝相机权限。请使用相册选择照片。
+            </Text>
+            <TouchableOpacity
+              style={styles.permBtn}
+              onPress={pickFromGallery}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.permBtnText}>从相册选择</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.permContainer}>
+          <Text style={styles.permTitle}>需要相机权限</Text>
+          <Text style={styles.permDesc}>为了拍摄物品照片，需要访问您的相机</Text>
+          <TouchableOpacity
+            style={styles.permBtn}
+            onPress={tryWebCamera}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.permBtnText}>允许相机权限</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={pickFromGallery}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.secondaryBtnText}>从相册选择</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Native (Android / iOS)
+    if (permission && permission.canAskAgain) {
+      return (
+        <View style={styles.permContainer}>
+          <Text style={styles.permTitle}>需要相机权限</Text>
+          <Text style={styles.permDesc}>为了拍摄物品照片，需要访问您的相机</Text>
+          <TouchableOpacity
+            style={styles.permBtn}
+            onPress={requestPermission}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.permBtnText}>授予相机权限</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.permContainer}>
+        <Text style={styles.permTitle}>需要相机权限</Text>
+        <Text style={styles.permDesc}>相机权限已被拒绝，请在系统设置中手动开启</Text>
+        <TouchableOpacity
+          style={styles.permBtn}
+          onPress={() => Linking.openSettings()}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.permBtnText}>前往设置</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back">
         <View style={styles.topBar}>
-          <TouchableOpacity style={styles.closeBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity
+            style={styles.closeBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.bottomBar}>
-          <TouchableOpacity style={styles.galleryBtn} onPress={pickFromGallery}>
+          <TouchableOpacity
+            style={styles.galleryBtn}
+            onPress={pickFromGallery}
+            activeOpacity={0.7}
+          >
             <Text style={styles.galleryIcon}>🖼</Text>
           </TouchableOpacity>
 
@@ -113,7 +252,7 @@ export default function CameraScreen() {
             )}
           </TouchableOpacity>
 
-          <View style={styles.galleryBtn} />
+          <View style={{ width: 48, height: 48 }} />
         </View>
       </CameraView>
     </View>
@@ -181,6 +320,17 @@ const styles = StyleSheet.create({
   galleryIcon: {
     fontSize: 22,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 15,
+    color: '#666',
+  },
   permContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -208,6 +358,20 @@ const styles = StyleSheet.create({
   },
   permBtnText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryBtn: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+  },
+  secondaryBtnText: {
+    color: '#007AFF',
     fontSize: 16,
     fontWeight: '600',
   },

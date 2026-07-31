@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   Modal,
 } from 'react-native';
-import Svg, { Circle, G, Text as SvgTextEl } from 'react-native-svg';
+import Svg, { Circle, G, Text as SvgTextEl, Line } from 'react-native-svg';
 import { Annotation } from '../types';
 import { getImageDisplayRect, screenToImageRatio, imageRatioToScreen, radiusToScreen, ImageDisplayRect } from '../utils/imageLayout';
 
@@ -25,6 +25,7 @@ interface Props {
 
 const HIT_TARGET = 36;
 const DEFAULT_RADIUS_RATIO = 0.06;
+const MIN_DRAW_RADIUS = 10;
 
 export default function AnnotationCanvas({
   imageWidth,
@@ -40,7 +41,12 @@ export default function AnnotationCanvas({
   const [editText, setEditText] = useState('');
   const [containerLayout, setContainerLayout] = useState({ width: 0, height: 0 });
 
-  // All mutable state accessible from stable PanResponder via refs
+  // --- Drawing state (React state for rendering) ---
+  const [drawing, setDrawing] = useState(false);
+  const [drawCenter, setDrawCenter] = useState<{ x: number; y: number } | null>(null);
+  const [drawRadius, setDrawRadius] = useState(0);
+
+  // --- Stable refs for PanResponder (avoid stale closures in useMemo([], [])) ---
   const dragIdRef = useRef<string | null>(null);
   const annotationsRef = useRef(annotations);
   annotationsRef.current = annotations;
@@ -52,11 +58,29 @@ export default function AnnotationCanvas({
   const readonlyRef = useRef(readonly);
   readonlyRef.current = readonly;
 
+  // Drawing refs (PanResponder reads these, not the state variables)
+  const drawingRef = useRef(false);
+  const drawCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const drawRadiusRef = useRef(0);
+
   const layoutRect = getImageDisplayRect(
     containerLayout.width, containerLayout.height, imageWidth, imageHeight
   );
   layoutRef.current = layoutRect;
 
+  // --- Coordinate helper: works around unreliable locationX/Y on web touch ---
+  const getCoords = (evt: any): { x: number; y: number } => {
+    const ne = evt.nativeEvent;
+    // On web with touch, nativeEvent.touches[0] may carry more accurate coords
+    if (ne.touches && ne.touches.length > 0) {
+      const t = ne.touches[0];
+      return { x: t.locationX ?? ne.locationX ?? 0, y: t.locationY ?? ne.locationY ?? 0 };
+    }
+    // Standard path: native (Android/iOS) + mouse on web
+    return { x: ne.locationX ?? 0, y: ne.locationY ?? 0 };
+  };
+
+  // --- Hit test: returns annotation id if touch lands inside an annotation circle ---
   const hitTest = (sx: number, sy: number): string | null => {
     const anns = annotationsRef.current;
     const rect = layoutRef.current;
@@ -69,6 +93,7 @@ export default function AnnotationCanvas({
     return null;
   };
 
+  // --- PanResponder ---
   const panResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => !readonlyRef.current,
     onMoveShouldSetPanResponder: (_, g) => {
@@ -77,59 +102,118 @@ export default function AnnotationCanvas({
     },
 
     onPanResponderGrant: (evt) => {
-      const { locationX, locationY } = evt.nativeEvent;
-      const hit = hitTest(locationX, locationY);
+      const { x, y } = getCoords(evt);
+      const hit = hitTest(x, y);
+
       if (hit) {
+        // Touch landed on an existing annotation — start drag-to-move
         dragIdRef.current = hit;
+      } else {
+        // Touch landed on empty space — start drawing mode
+        drawingRef.current = true;
+        drawCenterRef.current = { x, y };
+        drawRadiusRef.current = 0;
+        setDrawing(true);
+        setDrawCenter({ x, y });
+        setDrawRadius(0);
       }
     },
 
-    onPanResponderMove: (evt) => {
-      const id = dragIdRef.current;
-      if (!id) return;
-      const move = onMoveRef.current;
-      if (!move) return;
-      const { locationX, locationY } = evt.nativeEvent;
-      const ratio = screenToImageRatio(locationX, locationY, layoutRef.current);
-      move(id, ratio.x, ratio.y);
-    },
-
-    onPanResponderRelease: (evt, gs) => {
-      const { locationX, locationY } = evt.nativeEvent;
+    onPanResponderMove: (evt, gs) => {
       const id = dragIdRef.current;
 
       if (id) {
+        // Dragging an existing annotation
         const move = onMoveRef.current;
-        if (move) {
-          const ratio = screenToImageRatio(locationX, locationY, layoutRef.current);
-          move(id, ratio.x, ratio.y);
-        }
-        dragIdRef.current = null;
+        if (!move) return;
+        const { x, y } = getCoords(evt);
+        const ratio = screenToImageRatio(x, y, layoutRef.current);
+        move(id, ratio.x, ratio.y);
         return;
       }
 
-      // Tap (minimal movement)
-      if (Math.abs(gs.dx) < 5 && Math.abs(gs.dy) < 5) {
-        const hit = hitTest(locationX, locationY);
-        if (hit) {
-          const ann = annotationsRef.current.find(a => a.id === hit);
+      if (drawingRef.current) {
+        // Drawing a new circle — update radius based on distance from center
+        const r = Math.sqrt(gs.dx * gs.dx + gs.dy * gs.dy);
+        drawRadiusRef.current = r;
+        setDrawRadius(r);
+      }
+    },
+
+    onPanResponderRelease: (evt, gs) => {
+      const { x, y } = getCoords(evt);
+      const id = dragIdRef.current;
+
+      // --- Case 1: Was dragging an existing annotation ---
+      if (id) {
+        if (Math.abs(gs.dx) < 5 && Math.abs(gs.dy) < 5) {
+          // Minimal movement — treat as tap: open label editor
+          const ann = annotationsRef.current.find(a => a.id === id);
           if (ann) {
             setEditingId(ann.id);
             setEditText(ann.label);
           }
         } else {
-          const ratio = screenToImageRatio(locationX, locationY, layoutRef.current);
+          // Real drag — finalize the move
+          const move = onMoveRef.current;
+          if (move) {
+            const ratio = screenToImageRatio(x, y, layoutRef.current);
+            move(id, ratio.x, ratio.y);
+          }
+        }
+        dragIdRef.current = null;
+        return;
+      }
+
+      // --- Case 2: Was drawing a new circle ---
+      if (drawingRef.current) {
+        const center = drawCenterRef.current;
+        const r = drawRadiusRef.current;
+
+        if (center && r >= MIN_DRAW_RADIUS) {
+          // Significant drag — create annotation with the drawn circle
+          const ratio = screenToImageRatio(center.x, center.y, layoutRef.current);
+          const radiusRatio = r / Math.min(layoutRef.current.displayWidth, layoutRef.current.displayHeight);
           onAddRef.current({
-            x: ratio.x,
-            y: ratio.y,
-            radius: DEFAULT_RADIUS_RATIO,
+            x: Math.round(ratio.x * 10000) / 10000,
+            y: Math.round(ratio.y * 10000) / 10000,
+            radius: Math.round(radiusRatio * 10000) / 10000,
             label: '',
           });
+        } else {
+          // Very small / no drag — treat as old-style tap
+          const hit = hitTest(x, y);
+          if (hit) {
+            // Tap on existing annotation — open editor
+            const ann = annotationsRef.current.find(a => a.id === hit);
+            if (ann) {
+              setEditingId(ann.id);
+              setEditText(ann.label);
+            }
+          } else {
+            // Tap on empty space — create small default annotation
+            const ratio = screenToImageRatio(x, y, layoutRef.current);
+            onAddRef.current({
+              x: ratio.x,
+              y: ratio.y,
+              radius: DEFAULT_RADIUS_RATIO,
+              label: '',
+            });
+          }
         }
+
+        // Reset drawing state
+        drawingRef.current = false;
+        drawCenterRef.current = null;
+        drawRadiusRef.current = 0;
+        setDrawing(false);
+        setDrawCenter(null);
+        setDrawRadius(0);
       }
     },
   }), []);
 
+  // --- Save label edit ---
   const saveEdit = useCallback(() => {
     if (editingId) {
       onUpdateLabel(editingId, editText);
@@ -146,7 +230,8 @@ export default function AnnotationCanvas({
       }}
       {...(readonly ? {} : panResponder.panHandlers)}
     >
-      <Svg style={StyleSheet.absoluteFill}>
+      <Svg style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        {/* Existing annotations */}
         {annotations.map(ann => {
           const { cx, cy } = imageRatioToScreen(ann.x, ann.y, layoutRect);
           const r = radiusToScreen(ann.radius || DEFAULT_RADIUS_RATIO, layoutRect);
@@ -178,8 +263,33 @@ export default function AnnotationCanvas({
             </G>
           );
         })}
+
+        {/* Live preview circle during drawing */}
+        {drawing && drawCenter && (
+          <>
+            <Circle
+              cx={drawCenter.x}
+              cy={drawCenter.y}
+              r={drawRadius}
+              stroke="#FF9500"
+              strokeWidth={2.5}
+              strokeDasharray="6,3"
+              fill="rgba(255,149,0,0.1)"
+            />
+            <Line
+              x1={drawCenter.x}
+              y1={drawCenter.y}
+              x2={drawCenter.x + drawRadius}
+              y2={drawCenter.y}
+              stroke="#FF9500"
+              strokeWidth={1}
+              strokeDasharray="4,4"
+            />
+          </>
+        )}
       </Svg>
 
+      {/* Delete buttons */}
       {!readonly &&
         annotations.map(ann => {
           const { cx, cy } = imageRatioToScreen(ann.x, ann.y, layoutRect);
@@ -191,11 +301,12 @@ export default function AnnotationCanvas({
               onPress={() => onDeleteAnnotation(ann.id)}
               hitSlop={{ top: 8, left: 8, bottom: 8, right: 8 }}
             >
-              <Text style={styles.delText}>×</Text>
+              <Text style={styles.delText}>{'\u00D7'}</Text>
             </TouchableOpacity>
           );
         })}
 
+      {/* Label editor modal */}
       <Modal visible={editingId !== null} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -223,9 +334,10 @@ export default function AnnotationCanvas({
         </View>
       </Modal>
 
+      {/* Hint bar */}
       {!readonly && (
         <View style={styles.hint} pointerEvents="none">
-          <Text style={styles.hintText}>点击添加圈注 · 拖拽移动位置</Text>
+          <Text style={styles.hintText}>拖拽圈出物品 · 点击标注文字</Text>
         </View>
       )}
     </View>

@@ -18,6 +18,7 @@ interface Props {
   onRefresh: () => void;
   onPressItem: (item: Item) => void;
   onLongPressItem?: (item: Item) => void;
+  onDeleteItem?: (item: Item) => void;
 }
 
 export default function PhotoGrid({
@@ -26,6 +27,7 @@ export default function PhotoGrid({
   onRefresh,
   onPressItem,
   onLongPressItem,
+  onDeleteItem,
 }: Props) {
   const renderItem = useCallback(
     ({ item, index }: { item: Item; index: number }) => (
@@ -34,10 +36,11 @@ export default function PhotoGrid({
           item={item}
           onPress={() => onPressItem(item)}
           onLongPress={onLongPressItem ? () => onLongPressItem(item) : undefined}
+          onDelete={onDeleteItem ? () => onDeleteItem(item) : undefined}
         />
       </View>
     ),
-    [onPressItem, onLongPressItem]
+    [onPressItem, onLongPressItem, onDeleteItem]
   );
 
   if (items.length === 0) {

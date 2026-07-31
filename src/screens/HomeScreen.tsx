@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useAuth } from '../auth/AuthContext';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
@@ -22,14 +23,17 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
+  const { user, logout } = useAuth();
+  const userId = user!.id;
   const [items, setItems] = useState<Item[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
 
   const loadData = useCallback(async () => {
-    const [loaded, tags] = await Promise.all([getAllItems(), getAllTags()]);
+    const [loaded, tags] = await Promise.all([getAllItems(userId), getAllTags(userId)]);
     // Sort by newest first
     loaded.sort((a, b) => b.createdAt - a.createdAt);
     setItems(loaded);
@@ -45,7 +49,7 @@ export default function HomeScreen() {
   const doSearch = useCallback(async (text: string, tag: string) => {
     let results: Item[];
     if (tag) {
-      const all = await getAllItems();
+      const all = await getAllItems(userId);
       results = all.filter(item => item.tags.includes(tag));
       if (text.trim()) {
         const q = text.toLowerCase().trim();
@@ -56,9 +60,9 @@ export default function HomeScreen() {
         });
       }
     } else if (text.trim()) {
-      results = await searchItems(text);
+      results = await searchItems(userId, text);
     } else {
-      results = await getAllItems();
+      results = await getAllItems(userId);
     }
     results.sort((a, b) => b.createdAt - a.createdAt);
     setItems(results);
@@ -84,23 +88,27 @@ export default function HomeScreen() {
     navigation.navigate('Detail', { itemId: item.id });
   }, [navigation]);
 
+  const handleDeleteItem = useCallback((item: Item) => {
+    setDeleteTarget(item);
+  }, []);
+
   const handleLongPressItem = useCallback((item: Item) => {
-    Alert.alert('删除物品', `确定删除「${item.note || '未备注'}」吗？`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteItem(item.id);
-          await loadData();
-        },
-      },
-    ]);
+    const doDelete = async () => {
+      try {
+        Alert.alert('提示', '正在删除...');
+        await deleteItem(userId, item.id);
+        Alert.alert('成功', '删除完成');
+      } catch (e) {
+        Alert.alert('删除失败', String(e));
+      }
+      await loadData();
+    };
+    doDelete();
   }, [loadData]);
 
   const handleExport = useCallback(async () => {
     try {
-      const items = await getAllItems();
+      const items = await getAllItems(userId);
       if (items.length === 0) {
         Alert.alert('无数据', '没有可导出的数据');
         return;
@@ -139,7 +147,7 @@ export default function HomeScreen() {
       const valid = parsed.filter(isValidItem);
       const skipped = parsed.length - valid.length;
 
-      const { imported } = await importItems(valid);
+      const { imported } = await importItems(userId, valid);
       await loadData();
 
       let msg = `成功导入 ${imported} 条记录`;
@@ -185,6 +193,12 @@ export default function HomeScreen() {
             <Text style={styles.menuText}>⋯</Text>
           </TouchableOpacity>
         </View>
+        <View style={styles.userRow}>
+          <Text style={styles.username} numberOfLines={1}>{user?.username}</Text>
+          <TouchableOpacity onPress={logout} activeOpacity={0.7}>
+            <Text style={styles.logoutText}>退出</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <SearchBar
@@ -195,12 +209,36 @@ export default function HomeScreen() {
         onSelectTag={handleTagSelect}
       />
 
+      {deleteTarget && (
+        <View style={styles.deleteConfirm}>
+          <Text style={styles.deleteConfirmText}>删除「{deleteTarget.note || '未备注'}」？</Text>
+          <TouchableOpacity
+            style={styles.deleteConfirmBtn}
+            onPress={async () => {
+              const id = deleteTarget.id;
+              setDeleteTarget(null);
+              try { await deleteItem(userId, id); } catch (e) {}
+              await loadData();
+            }}
+          >
+            <Text style={styles.deleteConfirmBtnText}>确认删除</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteCancelBtn}
+            onPress={() => setDeleteTarget(null)}
+          >
+            <Text style={styles.deleteCancelText}>取消</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <PhotoGrid
         items={items}
         refreshing={refreshing}
         onRefresh={handleRefresh}
         onPressItem={handlePressItem}
         onLongPressItem={handleLongPressItem}
+        onDeleteItem={handleDeleteItem}
       />
 
       <TouchableOpacity
@@ -276,5 +314,59 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '300',
     lineHeight: 34,
+  },
+  deleteConfirm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFF3CD',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#FFECB5',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  deleteConfirmText: {
+    fontSize: 14,
+    color: '#856404',
+    flexShrink: 1,
+  },
+  deleteConfirmBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30',
+  },
+  deleteConfirmBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  deleteCancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    backgroundColor: '#E0E0E0',
+  },
+  deleteCancelText: {
+    color: '#333',
+    fontSize: 14,
+  },
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 6,
+  },
+  username: {
+    fontSize: 13,
+    color: '#666',
+    flex: 1,
+  },
+  logoutText: {
+    fontSize: 13,
+    color: '#E04040',
+    fontWeight: '500',
   },
 });
